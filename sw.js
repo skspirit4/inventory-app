@@ -1,10 +1,19 @@
-const CACHE_NAME = 'inventory-v1';
-const assets = ['./', 'index.html']; // 缓存首页
+const CACHE_NAME = 'inventory-v5';
 
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(assets)));
+self.addEventListener('install', (e) => {
+  self.skipWaiting(); // 强制跳过等待，立即安装
 });
 
-self.addEventListener('fetch', e => {
-  e.respondWith(caches.match(e.request).then(res => res || fetch(e.request)));
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then((keys) => {
+      return Promise.all(keys.map((key) => caches.delete(key))); // 清除旧缓存
+    })
+  );
+});
+
+self.addEventListener('fetch', (e) => {
+  e.respondWith(
+    fetch(e.request).catch(() => caches.match(e.request))
+  );
 });

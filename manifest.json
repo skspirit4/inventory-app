@@ -1,0 +1,16 @@
+{
+  "name": "配件清点助手",
+  "short_name": "配件清点",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "description": "离线配件清点与Excel导入工具",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2892/2892628.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

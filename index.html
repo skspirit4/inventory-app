@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>配件清点工作台 PWA</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+    <style>
+        /* (保留之前的样式，此处省略，保持一致即可) */
+        :root { --primary: #2563eb; --success: #059669; --error: #dc2626; --warning: #d97706; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f1f5f9; padding: 20px; color: #1e293b; }
+        .container { max-width: 1100px; margin: 0 auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; }
+        .action-panel { display: grid; grid-template-columns: 1fr 200px; gap: 20px; background: #f8fafc; padding: 20px; border-radius: 12px; margin-bottom: 25px; position: relative; }
+        .search-section { position: relative; }
+        input { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+        .suggest-list { position: absolute; width: 100%; background: white; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 100; max-height: 200px; overflow-y: auto; margin-top: 5px; }
+        .suggest-item { padding: 10px 15px; cursor: pointer; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f8fafc; padding: 15px; text-align: left; }
+        td { padding: 15px; border-bottom: 1px solid #f1f5f9; }
+        .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .btn-export { background: var(--success); color: white; }
+        .btn-clear { background: #ef4444; color: white; margin-left: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="container">
+    <div class="header">
+        <h2>📦 配件清点 (PWA版)</h2>
+        <div>
+            <button class="btn" style="background:#64748b; color:white; margin-right:10px;" onclick="document.getElementById('fileInput').click()">导入</button>
+            <button class="btn btn-export" @click="exportResults" :disabled="list.length === 0">导出</button>
+            <button class="btn btn-clear" @click="clearAll" v-if="list.length > 0">重置</button>
+            <input type="file" id="fileInput" style="display:none" @change="handleFileUpload" accept=".xlsx, .xls">
+        </div>
+    </div>
+
+    <div class="action-panel" v-if="list.length > 0">
+        <div class="search-section">
+            <input type="text" v-model="searchQuery" placeholder="搜索件号..." @input="showSuggests = true">
+            <div class="suggest-list" v-if="showSuggests && suggestions.length > 0">
+                <div v-for="item in suggestions" :key="item.partNo" class="suggest-item" @click="selectItem(item)">
+                    <span>{{ item.partNo }}</span>
+                    <span style="color:#94a3b8">应有: {{ item.expected }}</span>
+                </div>
+            </div>
+        </div>
+        <div v-if="selectedItem">
+            <input type="number" ref="qtyInput" v-model.number="tempQty" @keyup.enter="confirmQty" placeholder="实收数+回车">
+        </div>
+    </div>
+
+    <div v-if="list.length > 0">
+        <table>
+            <thead>
+                <tr><th>件号</th><th>应收</th><th>实收</th><th>差异</th></tr>
+            </thead>
+            <tbody>
+                <tr v-for="item in list" :key="item.partNo" :style="selectedItem?.partNo === item.partNo ? 'background:#eff6ff' : ''">
+                    <td>{{ item.partNo }}</td>
+                    <td>{{ item.expected }}</td>
+                    <td>{{ item.actual !== null ? item.actual : '-' }}</td>
+                    <td :style="getDiffStyle(item)">{{ item.actual !== null ? (item.actual - item.expected) : '-' }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, computed, nextTick, watch } = Vue;
+
+createApp({
+    setup() {
+        const list = ref([]);
+        const searchQuery = ref('');
+        const showSuggests = ref(false);
+        const selectedItem = ref(null);
+        const tempQty = ref(null);
+        const qtyInput = ref(null);
+
+        // --- 核心：数据恢复 (Local Persistence) ---
+        const savedData = localStorage.getItem('inventory_data');
+        if (savedData) {
+            list.value = JSON.parse(savedData);
+        }
+
+        // --- 核心：自动保存 (Auto Save) ---
+        watch(list, (newList) => {
+            localStorage.setItem('inventory_data', JSON.stringify(newList));
+        }, { deep: true });
+
+        const handleFileUpload = (e) => {
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const workbook = XLSX.read(evt.target.result, { type: 'binary' });
+                const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                list.value = data.map(row => ({
+                    partNo: String(row['件号'] || row['PartNumber'] || Object.values(row)[0]),
+                    expected: Number(row['数量'] || row['Qty'] || Object.values(row)[1] || 0),
+                    actual: null
+                }));
+            };
+            reader.readAsBinaryString(e.target.files[0]);
+        };
+
+        const suggestions = computed(() => {
+            if (!searchQuery.value) return [];
+            return list.value.filter(item => item.partNo.toLowerCase().includes(searchQuery.value.toLowerCase())).slice(0, 5);
+        });
+
+        const selectItem = (item) => {
+            selectedItem.value = item;
+            tempQty.value = item.actual;
+            searchQuery.value = item.partNo;
+            showSuggests.value = false;
+            nextTick(() => qtyInput.value.focus());
+        };
+
+        const confirmQty = () => {
+            if (selectedItem.value) {
+                selectedItem.value.actual = tempQty.value;
+                searchQuery.value = '';
+                selectedItem.value = null;
+                tempQty.value = null;
+            }
+        };
+
+        const clearAll = () => {
+            if(confirm("确定清空当前进度吗？")) {
+                list.value = [];
+                localStorage.removeItem('inventory_data');
+            }
+        };
+
+        const exportResults = () => {
+            const ws = XLSX.utils.json_to_sheet(list.value.map(i => ({
+                '件号': i.partNo, '应收': i.expected, '实收': i.actual, '差异': (i.actual||0)-i.expected
+            })));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "结果");
+            XLSX.writeFile(wb, "清点报告.xlsx");
+        };
+
+        const getDiffStyle = (i) => i.actual === null ? '' : (i.actual - i.expected === 0 ? 'color:green' : 'color:red;font-weight:bold');
+
+        return { list, searchQuery, suggestions, showSuggests, selectedItem, tempQty, qtyInput, handleFileUpload, selectItem, confirmQty, clearAll, exportResults, getDiffStyle }
+    }
+}).mount('#app');
+
+// 注册 Service Worker (用于 PWA)
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW register failed:', err));
+    });
+}
+</script>
+</body>
+</html>

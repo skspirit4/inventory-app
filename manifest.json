@@ -1,10 +1,9 @@
 {
   "name": "配件清点助手",
   "short_name": "配件清点",
-  "start_url": ".",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
-  "description": "离线配件清点与Excel导入工具",
   "theme_color": "#2563eb",
   "icons": [
     {
